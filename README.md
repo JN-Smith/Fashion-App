@@ -1,56 +1,178 @@
-# Welcome to your Expo app 👋
+# Sifa (Decent Mavazi)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A women's fashion mobile app for Android and iOS. Users browse clothing, save their body measurements for size guidance, and buy with M-Pesa, Airtel Money, or bank payment. Built for the Kenyan market, priced in KES.
 
-## Get started
+> Status: in development. Features below are the planned scope, not a list of what is finished.
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- Sign in and sign up
+- Body measurements form, used for size guidance
+- Home feed
+- Browse by clothing type, with an "On sale" filter
+- Product detail page
+- Wishlist
+- Cart
+- Checkout with saved addresses and a choice of payment method
+- Orders list and order tracking
+- Account page
+- Notifications
+- Settings
 
-2. Start the app
+## Tech Stack
 
-   ```bash
-   npx expo start
-   ```
+| Area         | Choice                                               |
+| ------------ | ---------------------------------------------------- |
+| App          | Expo, React Native, TypeScript                       |
+| Navigation   | Expo Router                                          |
+| Styling      | NativeWind                                           |
+| Client state | Zustand, AsyncStorage                                |
+| Server data  | TanStack Query                                       |
+| Auth         | Clerk                                                |
+| Backend      | Supabase (Postgres, Storage, Edge Functions)         |
+| Images       | `expo-image`                                         |
+| Push         | `expo-notifications`                                 |
+| Payments     | M-Pesa (Daraja STK Push), Airtel Money, bank account |
 
-In the output, you'll find options to open the app in a
+## Getting Started
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Prerequisites
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- Node.js (current LTS)
+- A Clerk account and application
+- A Supabase project and the [Supabase CLI](https://supabase.com/docs/guides/cli)
+- A phone with Expo Go, or an Android emulator or iOS simulator
 
-## Get a fresh project
-
-When you're ready, run:
+### Install
 
 ```bash
-npm run reset-project
+git clone <your-repo-url>
+cd <project-folder>
+npm install
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+### Environment variables
 
-### Other setup steps
+Copy `.env.example` to `.env` and fill in the values.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+cp .env.example .env
+```
 
-## Learn more
+| Variable                            | Description                                                          |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key                                                |
+| `EXPO_PUBLIC_SUPABASE_URL`          | Supabase project URL                                                 |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY`     | Supabase anon key (safe in the app because RLS protects every table) |
 
-To learn more about developing your project with Expo, look at the following resources:
+Only values prefixed with `EXPO_PUBLIC_` end up inside the app. Never put secrets in them.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Run the app
 
-## Join the community
+```bash
+npx expo start
+```
 
-Join our community of developers creating universal apps.
+Scan the QR code with Expo Go, or press `a` for Android or `i` for iOS. Push notifications on Android need a development build, because remote push does not work in Expo Go.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Backend Setup
+
+### Database
+
+Schema changes live in `supabase/migrations/`. Apply them with:
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Row-level security is enabled on every table. Products are readable by everyone. Measurements, addresses, wishlist items and push tokens are readable and writable only by their owner. Orders and payments are readable by their owner and written only by Edge Functions.
+
+### Edge Functions
+
+Functions live in `supabase/functions/`:
+
+| Function          | Purpose                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `create-order`    | Builds an order from the cart, reading real prices from the database |
+| `mpesa-stk-push`  | Starts an M-Pesa STK Push payment                                    |
+| `mpesa-callback`  | Receives the M-Pesa result and updates the payment and order         |
+| `airtel-collect`  | Starts an Airtel Money collection request                            |
+| `airtel-callback` | Receives the Airtel Money result and updates the payment and order   |
+
+Deploy and set secrets:
+
+```bash
+supabase functions deploy create-order
+supabase functions deploy mpesa-stk-push
+supabase functions deploy mpesa-callback
+supabase functions deploy airtel-collect
+supabase functions deploy airtel-callback
+
+supabase secrets set --env-file ./supabase/.env.secrets
+```
+
+Secrets are stored as Supabase function secrets and are never shipped in the app:
+
+- M-Pesa consumer key, consumer secret, passkey and shortcode
+- Airtel client id and client secret
+- Supabase service role key
+- Any bank or aggregator credentials
+
+Keep `supabase/.env.secrets` out of git.
+
+### Clerk and Supabase
+
+Auth uses Clerk, and the Clerk session token is passed to Supabase so row-level security can identify the user. Follow the current Clerk and Supabase guides for connecting the two, since the setup has changed over time.
+
+## Payments
+
+| Method       | How it works                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| M-Pesa       | STK Push. The customer approves on their phone and the result arrives at a public HTTPS callback     |
+| Airtel Money | Collection request, approved on the customer's phone, result arrives at a callback                   |
+| Bank account | Approach still to be decided. Until then the app shows transfer instructions and the order reference |
+
+Rules the code follows:
+
+- The app never talks to a payment provider directly. It calls our Edge Functions.
+- Only Edge Functions can mark an order paid.
+- Callbacks are treated as untrusted input and checked against a known pending payment and its amount.
+- Providers run against their sandboxes until production credentials are approved.
+
+## Project Structure
+
+```
+app/            Routes and screens only
+  (auth)/       Sign in, sign up
+  (tabs)/       Main tab screens
+components/     Reusable UI
+constants/      Constants and centralized image imports
+data/           Typed static content (categories, size charts)
+hooks/          TanStack Query hooks, one per resource
+lib/            Service helpers (Clerk, Supabase, payments)
+store/          Zustand stores (cart, payment method)
+types/          Shared TypeScript types
+assets/         Images and fonts
+supabase/
+  migrations/   SQL schema and RLS policies
+  functions/    Edge Functions
+```
+
+## Working With an AI Coding Agent
+
+`AGENT.md` in the project root holds the architecture, styling rules, payment rules and conventions the agent must follow. Point your agent at it before starting any feature.
+
+## Roadmap
+
+- [ ] Auth and measurements
+- [ ] Home feed, categories, sale filter, product detail
+- [ ] Wishlist, cart, saved addresses
+- [ ] Checkout, orders, M-Pesa
+- [ ] Airtel Money and bank option
+- [ ] Notifications and settings
+- [ ] Test builds on real devices
+
+## License
+
+To be decided.
